@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH_OUTPUT=/shared/home/root/scripts/logs/spackEnvironment-%j.log
-#SBATCH_ERROR=/shared/home/root/scripts/logs/spackEnvironment-%j.log
+#SBATCH --output /shared/home/root/scripts/logs/spackEnvironment-%j.log
+#SBATCH --error /shared/home/root/scripts/logs/spackEnvironment-%j.log
 
 # This script is used for installing all of the dependencies in a spack
 # environment. If an environment is created interactively by a series of `spack

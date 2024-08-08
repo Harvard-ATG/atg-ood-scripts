@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH_OUTPUT=/shared/home/root/scripts/logs/spackSetupEnvironment-%j.log
-#SBATCH_ERROR=/shared/home/root/scripts/logs/spackSetupEnvironment-%j.log
+#SBATCH --output /shared/home/root/scripts/logs/spackSetupEnvironment-%j.log
+#SBATCH --error /shared/home/root/scripts/logs/spackSetupEnvironment-%j.log
 
 # This script is used to set up a spack environment that has not yet been
 # created, but has a definition file at

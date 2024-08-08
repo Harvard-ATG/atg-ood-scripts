@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH_OUTPUT=/shared/home/root/scripts/logs/environmentOrchestration-%j.log
-#SBATCH_ERROR=/shared/home/root/scripts/logs/environmentOrchestration-%j.log
+#SBATCH --output /shared/home/root/scripts/logs/environmentOrchestration-%j.log
+#SBATCH --error /shared/home/root/scripts/logs/environmentOrchestration-%j.log
 
 # This script is a first attempt at getting a whole spack setup process up and
 # running. The idea is to set up the gcc compiler, the global compiler settings,
