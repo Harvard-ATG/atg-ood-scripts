@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH_OUTPUT=/shared/home/root/scripts/logs/buildApptainer-%j.log
+#SBATCH_ERROR=/shared/home/root/scripts/logs/buildApptainer-%j.log
 
 # This script is a helper script for building Apptainer image files as a batch
 # job in slurm. The script has one mandatory argument, and another optional arg,

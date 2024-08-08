@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH_OUTPUT=/shared/home/root/scripts/logs/setupAllCourseSpack-%j.log
+#SBATCH_ERROR=/shared/home/root/scripts/logs/setupAllCourseSpack-%j.log
 
 # This script will set up course spack installations with the global spack
 # installation referenced as an upstream. It invokes the `setup_spack.sh` script

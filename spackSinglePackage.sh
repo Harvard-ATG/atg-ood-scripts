@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH_OUTPUT=/shared/home/root/scripts/logs/spackSinglePackage-%j.log
+#SBATCH_ERROR=/shared/home/root/scripts/logs/spackSinglePackage-%j.log
 
 # Installing some spack packages can be time consuming, so this script was
 # created to make it easier to install a package with an asynchronous batch job

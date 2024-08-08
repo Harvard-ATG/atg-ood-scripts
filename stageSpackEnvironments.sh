@@ -1,4 +1,6 @@
 #!/bin/bash
+#SBATCH_OUTPUT=/shared/home/root/scripts/logs/stageSpackEnvironments-%j.log
+#SBATCH_ERROR=/shared/home/root/scripts/logs/stageSpackEnvironments-%j.log
 
 # This script iterates through installed OOD apps and looks for a folder in each
 # app called "spack-environment". If this folder is found, it copies its
