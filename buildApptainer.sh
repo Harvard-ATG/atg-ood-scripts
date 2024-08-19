@@ -28,7 +28,7 @@
 # References: https://apptainer.org/docs/user/main/build_a_container.html
 # https://apptainer.org/docs/user/main/definition_files.html
 
-if [ $1 -eq 0 ]
+if [ -x "${1}" ]
   then
     echo "Apptainer build name is required, e.g. `buildApptainer.sh containerFileName`"
     exit 1

@@ -13,7 +13,7 @@
 # assumes the environment does not already exist. If you just want to install
 # packages for an existing environment, use `spackEnvironment.sh`.
 
-if [ $1 -eq 0 ]
+if [ -x "${1}" ]
   then
     echo "Environment name is required, e.g. `spackSetupEnvironment.sh environmentName`"
     exit 1
