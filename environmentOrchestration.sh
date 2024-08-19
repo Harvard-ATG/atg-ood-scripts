@@ -5,19 +5,19 @@
 # This script is a first attempt at getting a whole spack setup process up and
 # running. The idea is to set up the gcc compiler, the global compiler settings,
 # then all of the environments available.
-                                                                             
+
 # At time of writing, the first two steps don't work, so they're commented out.
 # The loop for environments still needs a starting job id, so there's a simple
 # hello world job to start instead. When the compilers.sh script is a real
 # thing, and this script can work on a fresh install, that hello world part
 # won't be necessary.
-                                                                             
+
 # The script doesn't take any arguments, but does assume that there are spack
 # environments stored at the TARGET_LOCATION of /shared/home/root/environments,
 # and that they conform to the expectations of the `spackSetupEnvironment.sh`
 # script, which is expected to initialize a new environment, then install its
 # dependencies.
-                                                                             
+
 # The script isn't intended to run via sbatch, since it sets up a chain of
 # dependent slurm jobs. Instead, just run this script as-is from
 # /shared/home/root, and it should set up all of the jobs to configure all of

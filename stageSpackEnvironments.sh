@@ -13,11 +13,11 @@
 # correctly.
 
 # Set OOD apps directory
-appdir="/var/www/ood/apps/sys/"
+appdir="/var/www/ood/apps/sys"
 envdir="/shared/home/root/environments"
 
 # Ensure target directory exists
-mkir -p /shared/home/root/environments
+mkdir -p /shared/home/root/environments
 
 # iterate through apps
 for folder in "$appdir"/*; do
@@ -25,7 +25,7 @@ for folder in "$appdir"/*; do
     # check if 'spack-environment' subfolder exists
     if [ -d "$folder/spack-environment" ]; then
       # set up environment
-      cp -r "$folder/spack-environment/*" "/shared/home/root/environments"
+      cp -r $folder/spack-environment/* /shared/home/root/environments
     fi
   fi
 done

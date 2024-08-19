@@ -18,7 +18,7 @@
 # to the installation job to give it some more resources to try to get it to
 # install faster.
 
-if [ $1 -eq 0 ]
+if [ -x "$1" ]
   then
     echo "Package name is required, e.g. `spackSinglePackage.sh packageName`"
     exit 1

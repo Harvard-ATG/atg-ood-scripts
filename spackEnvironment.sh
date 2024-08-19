@@ -16,7 +16,7 @@
 # command is running on 8 CPU cores, but different resources can be allocated
 # with regular sbatch command options.
 
-if [ $1 -eq 0 ]
+if [ -x "${1}" ]
   then
     echo "Environment name is required, e.g. `spackEnvironment.sh environmentName`"
     exit 1
