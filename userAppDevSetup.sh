@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# This script follows the setup process outlined at
+# https://osc.github.io/ood-documentation/latest/how-tos/app-development/enabling-development-mode.html
+# to set up app development folders for a given user. All that you need to
+# provide is a username (net ID). The script will check if they have a home
+# directory and won't run if they don't, so this will only work for users who
+# have already logged into the system at least once.
+
+# The script will only work when run on the portal node, as the symlink it
+# creates needs to exist within the OOD install on the portal node.
+
 if [ -z "$1" ]
   then
     echo "User name is required, e.g. '$0 username'"
