@@ -29,7 +29,7 @@ mkdir -p "/shared/home/$1/ondemand/dev"
 
 # Get user's group and fix permissions
 TARGET_GROUP=$(id -gn $1)
-chown $1:$TARGET_GROUP /shared/home/$1/ondemand/dev
+chown -R $1:$TARGET_GROUP /shared/home/$1/ondemand
 
 # Create dev folder for user in OOD install
 mkdir -p "/var/www/ood/apps/dev/$1"
