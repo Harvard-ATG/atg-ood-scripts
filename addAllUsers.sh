@@ -6,6 +6,8 @@
 # ldapsearch -H ldaps://ldap-shadow.iam.harvard.edu -x -D "uid=OnDemand,ou=ldap-apps,dc=harvard,dc=edu" -W -b "ou=grouper,ou=groups,dc=harvard,dc=edu" "(cn=canvas*)" cn uniqueMember
 # This script was created by the Mistral Large 2407 LLM and modified for use in this context.
 
+# The script must be run from the portal node, rather than the head node or login node
+
 # Define the file to read from
 input_file=$1
 
