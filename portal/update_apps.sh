@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# This script was created by Anthropic Claude Sonnet in the HUIT Sandbox on
+# August 22, 2025 using the prompt "I want to write a shell script that finds
+# every folder that starts with "ood" in /var/www/ood/apps/sys", then changes
+# into that directory and runs git pull origin main`. Can you whip that up?"
+
 # Base directory to search in
 BASE_DIR="/var/www/ood/apps/sys"
 
