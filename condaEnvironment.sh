@@ -35,6 +35,9 @@ CONDA_ENVIRONMENT_FILE=$2
 . /shared/spack/share/spack/setup-env.sh
 echo "Activating spack environment: $SPACK_ENVIRONMENT"
 spack env activate $SPACK_ENVIRONMENT
+echo "Accepting TOS which for some reason I have to do now"
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 echo "Creating conda environment file: $CONDA_ENVIRONMENT_FILE"
 echo ""
 cat $CONDA_ENVIRONMENT_FILE
