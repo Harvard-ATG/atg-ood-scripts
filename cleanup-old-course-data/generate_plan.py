@@ -10,7 +10,7 @@ Usage:
 """
 
 import os
-import grp
+import subprocess
 import pwd
 import yaml
 import argparse
@@ -51,22 +51,29 @@ def folder_matches_active_course(
 
 def get_user_groups(username: str) -> list[str]:
     """
-    Return a sorted list of all group names the user belongs to
-    (primary + secondary). Returns an empty list if the user is not found
-    in /etc/passwd or if group information cannot be retrieved.
+    Return a sorted list of all group names the user belongs to.
+
+    Uses 'id -Gn' rather than grp.getgrall() because getgrall() relies on
+    getgrent() enumeration, which SSSD disables by default. The 'id' command
+    goes through the initgroups NSS path that SSSD always supports.
     """
     try:
-        user_info = pwd.getpwnam(username)
-        # Secondary groups (user appears in gr_mem)
-        groups = [g.gr_name for g in grp.getgrall() if username in g.gr_mem]
-        # Primary group
-        primary_group = grp.getgrgid(user_info.pw_gid).gr_name
-        if primary_group not in groups:
-            groups.insert(0, primary_group)
-        return sorted(groups)
-    except KeyError:
+        result = subprocess.run(
+            ["id", "-Gn", username],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            return sorted(result.stdout.strip().split())
+
+        # returncode 1 typically means the user wasn't found
         return []
-    except Exception as exc:
+
+    except subprocess.TimeoutExpired:
+        print(f"  Warning: 'id -Gn {username}' timed out — SSSD may be unreachable")
+        return []
+    except OSError as exc:
         print(f"  Warning: could not retrieve groups for '{username}': {exc}")
         return []
 
@@ -179,7 +186,7 @@ def scan_user_home_directories(
             try:
                 pwd.getpwnam(username)
             except KeyError:
-                item["note"] = "User account not found in /etc/passwd"
+                item["note"] = "User account not found"
             to_backup.append(item)
 
     return to_backup, to_keep
