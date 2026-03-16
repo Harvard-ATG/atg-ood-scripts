@@ -167,6 +167,7 @@ def scan_user_home_directories(
                 "matched_course_id": "N/A",
                 "reason":            "root user is always kept"
             })
+            continue
 
         groups = get_user_groups(username)
         is_active, matched_group, matched_course = user_in_active_course(
