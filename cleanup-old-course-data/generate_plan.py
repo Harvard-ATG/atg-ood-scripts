@@ -157,6 +157,17 @@ def scan_user_home_directories(
             continue
 
         username = entry.name
+
+        if username == 'root':
+            to_keep.append({
+                "username":          username,
+                "path":              entry.path,
+                "groups":            "root",
+                "matched_group":     "root",
+                "matched_course_id": "N/A",
+                "reason":            "root user is always kept"
+            })
+
         groups = get_user_groups(username)
         is_active, matched_group, matched_course = user_in_active_course(
             groups, active_courses
