@@ -57,14 +57,14 @@ out of the spreadsheet.
 ```text
 # active_courses.txt
 # Lines beginning with # and blank lines are ignored.
-CS101-2024SP
-BIO220-2024SP
-ENG315-2024SP
+000000
+111111
+222222
 ```
 
 A course ID is matched against folder names and user group names as a
-case-insensitive substring, so `CS101-2024SP` will match a folder named
-`CS101-2024SP_shared` or a group named `students-cs101-2024sp`.
+case-insensitive substring, so `111111` will match a folder named
+`111111outer` or a group named `canvas111111-8888888`.
 
 ### Step 2: Generate a plan
 
@@ -90,8 +90,8 @@ python generate_plan.py active_courses.txt \
 
 ### Step 3: Review the plan
 
-Open the generated YAML file and check both to_backup sections before
-proceeding. Each section also includes a to_keep list showing which folders
+Open the generated YAML file and check both `to_backup` sections before
+proceeding. Each section also includes a `to_keep` list showing which folders
 and users were matched to an active course and why, so you can verify the
 matching logic behaved as expected.
 
@@ -105,7 +105,15 @@ Key fields to check in the to_backup lists:
 | note | Present if the user account no longer exists in the directory |
 
 If anything looks wrong, correct the `active_courses.txt` file and re-run
-`generate_plan.py` to produce a fresh plan before continuing.
+`generate_plan.py` to produce a fresh plan before continuing. If there is some
+specific case that isn't accounted for by the `generate_plan.py` script, and
+doesn't require a change in the business logic of the script, you can also
+modify the plan file directly to ensure that some specific content is not
+removed. For example, if a student requires extended access to the system, but
+their home folder is set to be deleted, you can just move their section of the
+plan file from the `to_backup` section and add it to the `to_keep` section.
+Separating the plan from the execution allows us some flexibility to handle
+these edge cases while preserving the benefits of automating the process.
 
 ### Step 4: Dry run
 
