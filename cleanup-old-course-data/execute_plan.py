@@ -269,7 +269,7 @@ def save_plan(
             )
     except IOError as exc:
         logger.warning(f"Could not write plan file '{plan_file}': {exc}")
-        return
+        return  # No point syncing if we couldn't write locally
 
     if syncer and log_file:
         syncer.push_both(plan_file, log_file)
