@@ -3,21 +3,21 @@
 Execute a backup/deletion plan produced by generate_plan.py.
 
 For every item with status 'pending':
-  1. Upload the directory tree to S3.
-  2. Delete the local copy.
-  3. Update the item's status in the plan file immediately, then sync
+  1. Compress the directory to a temporary .tar.gz archive.
+  2. Upload the archive to S3 using the Glacier Instant Retrieval storage class.
+  3. Delete the local directory.
+  4. Update the item's status in the plan file immediately, then sync
      both the plan file and the execution log back to S3.
 
-The plan file and execution log are synced to fixed S3 keys after every
-status change. If the run is interrupted, a second administrator can
-resume from a different machine using --from-s3.
+Plan files and execution logs are stored on standard S3 storage for immediate
+access. Only backup archives use Glacier Instant Retrieval.
 
 S3 layout
 ---------
-  {s3_prefix}/plan/{plan_filename}            # updated after every item
-  {s3_prefix}/logs/{log_filename}             # updated after every item
-  {s3_prefix}/course_shared_folders/{name}/   # backed-up course folders
-  {s3_prefix}/home/{username}/                # backed-up user home dirs
+  {s3_prefix}/plan/{plan_filename}                      <- standard storage
+  {s3_prefix}/logs/{log_filename}                       <- standard storage
+  {s3_prefix}/course_shared_folders/{name}.tar.gz       <- Glacier IR
+  {s3_prefix}/home/{username}.tar.gz                    <- Glacier IR
 
 Usage
 -----
@@ -34,6 +34,8 @@ Usage
 import os
 import re
 import shutil
+import tarfile
+import tempfile
 import logging
 import argparse
 import yaml
@@ -41,6 +43,12 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from datetime import datetime
 from pathlib import Path
+
+
+# Storage class used for all backup archives.
+# Plan files and logs intentionally use the default (standard) storage class
+# so they remain immediately readable at any point during or after a run.
+BACKUP_STORAGE_CLASS = "GLACIER_IR"
 
 
 # ---------------------------------------------------------------------------
@@ -53,13 +61,9 @@ class S3Sync:
     so that a second administrator can resume a partial run from a different
     machine.
 
-    The plan is the authoritative record of what has and hasn't been processed.
-    The log provides a human-readable audit trail. Both are pushed to S3 after
-    every status change so neither can fall more than one item behind.
-
-    S3 layout (relative to s3_prefix):
-        {s3_prefix}/plan/{plan_filename}
-        {s3_prefix}/logs/{log_filename}
+    Plan files and logs use the default (standard) storage class since they
+    must be immediately readable at any point during or after a run. Only
+    backup archives use Glacier Instant Retrieval.
     """
 
     def __init__(
@@ -78,8 +82,9 @@ class S3Sync:
 
     def _upload(self, local_path: str, s3_key: str) -> None:
         """
-        Upload a single file to S3. Logs a warning on failure rather than
-        raising — a sync hiccup should never abort the backup/deletion work.
+        Upload a single file to S3 on standard storage. Logs a warning on
+        failure rather than raising — a sync hiccup should never abort the
+        backup/deletion work.
         """
         try:
             self.s3_client.upload_file(local_path, self.bucket, s3_key)
@@ -99,7 +104,6 @@ class S3Sync:
     def push_log(self, local_path: str) -> None:
         """
         Flush all log handlers then upload the log file to its fixed S3 key.
-        Flushing before uploading ensures the S3 copy captures the latest lines.
         """
         for handler in logging.getLogger("execute_plan").handlers:
             handler.flush()
@@ -132,8 +136,7 @@ class S3Sync:
     ) -> bool:
         """
         Download a plan file from S3 to local_path, overwriting any existing
-        local copy. The S3 version is always treated as authoritative since it
-        reflects the most recently saved state of a prior run.
+        local copy. The S3 version is always treated as authoritative.
         Returns True on success, False on any error.
         """
         logger.info(
@@ -184,36 +187,55 @@ def setup_logging(log_file: str) -> logging.Logger:
 
 
 # ---------------------------------------------------------------------------
-# S3 backup upload
+# Compression and S3 upload
 # ---------------------------------------------------------------------------
 
-def upload_directory_to_s3(
+def compress_and_upload_to_s3(
     s3_client,
     local_path: str,
     bucket:     str,
-    s3_prefix:  str,
+    s3_key:     str,
     logger:     logging.Logger,
-) -> int:
+) -> tuple[int, float]:
     """
-    Recursively upload every file under local_path to s3://bucket/s3_prefix/.
-    Returns the number of files uploaded. Raises on the first error so the
-    caller can mark the item as failed without deleting anything locally.
+    Compress the directory at local_path to a temporary .tar.gz archive and
+    upload it to S3 using the Glacier Instant Retrieval storage class.
+
+    The archive is written to a temporary directory that is automatically
+    cleaned up after the upload completes, regardless of success or failure.
+    Note that compression requires temporary disk space comparable to the
+    size of the source directory; ensure the host has sufficient space
+    available under the system temporary directory (usually /tmp).
+
+    Returns (file_count, compressed_size_mb).
+    Raises on any compression or S3 error so the caller can handle the
+    failure without deleting the local directory.
     """
-    local_root = Path(local_path)
-    count = 0
+    folder_name = Path(local_path).name
+    file_count  = sum(1 for p in Path(local_path).rglob("*") if p.is_file())
 
-    for file_path in sorted(local_root.rglob("*")):
-        if not file_path.is_file():
-            continue
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        archive_path = os.path.join(tmp_dir, f"{folder_name}.tar.gz")
 
-        relative = file_path.relative_to(local_root)
-        s3_key   = f"{s3_prefix}/{relative}".replace("\\", "/")
+        logger.debug(f"    Compressing {file_count} file(s) from '{local_path}'")
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(local_path, arcname=folder_name)
 
-        logger.debug(f"    uploading {file_path}  ->  s3://{bucket}/{s3_key}")
-        s3_client.upload_file(str(file_path), bucket, s3_key)
-        count += 1
+        compressed_mb = os.path.getsize(archive_path) / (1024 * 1024)
+        logger.debug(f"    Compressed size: {compressed_mb:.1f} MB")
+        logger.debug(
+            f"    Uploading '{archive_path}'  ->  s3://{bucket}/{s3_key} "
+            f"[{BACKUP_STORAGE_CLASS}]"
+        )
 
-    return count
+        s3_client.upload_file(
+            archive_path,
+            bucket,
+            s3_key,
+            ExtraArgs={"StorageClass": BACKUP_STORAGE_CLASS},
+        )
+
+    return file_count, compressed_mb
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +269,7 @@ def save_plan(
             )
     except IOError as exc:
         logger.warning(f"Could not write plan file '{plan_file}': {exc}")
-        return  # No point syncing if we couldn't write locally
+        return
 
     if syncer and log_file:
         syncer.push_both(plan_file, log_file)
@@ -273,9 +295,11 @@ def process_item(
     log_file:  "str | None"    = None,
 ) -> None:
     """
-    Back up a single directory to S3 then delete the local copy.
+    Compress a single directory to a .tar.gz archive, upload to S3 using
+    Glacier Instant Retrieval, then delete the local copy.
+
     After every status change the plan is saved locally and synced to S3
-    (along with the current log) so no progress is ever lost.
+    along with the current log so no progress is ever lost.
     """
     label = item.get("folder_name") or item.get("username") or item["path"]
     path  = item["path"]
@@ -289,13 +313,16 @@ def process_item(
         logger.info(f"  [skip] {label} — previously failed (use --retry-failed to retry)")
         return
 
-    s3_dest = f"{s3_prefix}/{item_type}/{label}"
-    s3_uri  = f"s3://{bucket}/{s3_dest}/"
+    s3_key = f"{s3_prefix}/{item_type}/{label}.tar.gz"
+    s3_uri = f"s3://{bucket}/{s3_key}"
 
     # ---- Dry-run ----
     if dry_run:
-        logger.info(f"  [dry-run] would upload '{path}'  ->  {s3_uri}")
-        logger.info(f"  [dry-run] would delete  '{path}'")
+        logger.info(
+            f"  [dry-run] would compress and upload '{path}'  ->  "
+            f"{s3_uri}  [{BACKUP_STORAGE_CLASS}]"
+        )
+        logger.info(f"  [dry-run] would delete '{path}'")
         return
 
     # ---- Sanity check ----
@@ -307,15 +334,20 @@ def process_item(
         return
 
     logger.info(f"  Processing '{label}'")
-    logger.info(f"    source : {path}")
-    logger.info(f"    dest   : {s3_uri}")
+    logger.info(f"    source  : {path}")
+    logger.info(f"    dest    : {s3_uri}  [{BACKUP_STORAGE_CLASS}]")
 
-    # ---- Upload ----
+    # ---- Compress and upload ----
     try:
-        count = upload_directory_to_s3(s3_client, path, bucket, s3_dest, logger)
-        logger.info(f"    uploaded {count} file(s)")
-    except (BotoCoreError, ClientError, OSError) as exc:
-        logger.error(f"    Upload FAILED for '{label}': {exc}")
+        file_count, compressed_mb = compress_and_upload_to_s3(
+            s3_client, path, bucket, s3_key, logger
+        )
+        logger.info(
+            f"    uploaded {file_count} file(s) "
+            f"as {compressed_mb:.1f} MB archive"
+        )
+    except (BotoCoreError, ClientError, OSError, tarfile.TarError) as exc:
+        logger.error(f"    Compress/upload FAILED for '{label}': {exc}")
         item["status"]    = "failed"
         item["error"]     = str(exc)
         item["failed_at"] = datetime.now().isoformat(timespec="seconds")
@@ -336,9 +368,10 @@ def process_item(
         return
 
     # ---- Success ----
-    item["status"]       = "completed"
-    item["completed_at"] = datetime.now().isoformat(timespec="seconds")
-    item["s3_location"]  = s3_uri
+    item["status"]        = "completed"
+    item["completed_at"]  = datetime.now().isoformat(timespec="seconds")
+    item["s3_location"]   = s3_uri
+    item["storage_class"] = BACKUP_STORAGE_CLASS
     item.pop("error",     None)
     item.pop("failed_at", None)
     save_plan(plan, plan_file, logger, syncer, log_file)
@@ -364,6 +397,7 @@ def execute_plan(
     prefix = "[DRY RUN] " if dry_run else ""
     logger.info(f"{prefix}Plan file      : {plan_file}")
     logger.info(f"{prefix}S3 destination : s3://{s3_bucket}/{s3_prefix}/")
+    logger.info(f"{prefix}Storage class  : {BACKUP_STORAGE_CLASS} (backup archives)")
     logger.info(f"Log file       : {log_file}")
 
     # ---- Derive fixed S3 keys for the plan and log ----
@@ -468,10 +502,11 @@ def execute_plan(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Execute a backup/deletion plan: upload pending items to S3, "
-            "then delete the local copies. The plan file and execution log "
-            "are continuously synced to S3 after every item so that an "
-            "interrupted run can be resumed from a different machine."
+            "Execute a backup/deletion plan: compress each pending directory "
+            "to a .tar.gz archive, upload to S3 using Glacier Instant "
+            "Retrieval, then delete the local copy. The plan file and "
+            "execution log are continuously synced to S3 on standard storage "
+            "after every item."
         )
     )
     parser.add_argument(
@@ -508,7 +543,10 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print planned actions without uploading, deleting, or syncing to S3",
+        help=(
+            "Print planned actions without compressing, uploading, "
+            "deleting, or syncing to S3"
+        ),
     )
     parser.add_argument(
         "--retry-failed",
@@ -528,10 +566,6 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # ---- Derive s3_prefix ----
-    # When resuming with --from-s3 we need the prefix before the plan is
-    # available locally. Extract the date from the plan filename first since
-    # that's reliable; fall back to reading the plan, then to today's date.
     s3_prefix = args.s3_prefix
     if s3_prefix is None:
         match = re.search(r"(\d{8})", os.path.basename(args.plan_file))

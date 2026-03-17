@@ -11,7 +11,13 @@ The backup process uses two scripts:
 | Script | Purpose |
 |---|---|
 | `generate_plan.py` | Scans course shared folders and user home directories, compares them against a list of active course IDs, and produces a YAML plan file listing what will be backed up and removed |
-| `execute_plan.py` | Reads the plan file, uploads each flagged directory to S3, deletes the local copy, and records the outcome back into the plan file |
+| `execute_plan.py` | Reads the plan file, compresses each flagged directory into a `.tar.gz` archive, uploads it to S3 using the Glacier Instant Retrieval storage class, deletes the local copy, and records the outcome back into the plan file |
+
+Backup archives are stored using the **Glacier Instant Retrieval** storage
+class, which significantly reduces storage costs while still allowing data to
+be retrieved within milliseconds when needed. The plan file and execution logs
+are stored on standard S3 storage so they remain immediately accessible for
+auditing and resume purposes.
 
 The plan file is your checkpoint and audit record. It is updated after every
 item is processed and synced to S3 continuously, so if a run is interrupted
@@ -176,25 +182,21 @@ python execute_plan.py backup_plan_20240115_103000.yml S3_BUCKET_PLACEHOLDER \
 
 All content for a given backup run is stored under a single date-based prefix:
 
-```bash
+```
 s3://S3_BUCKET_PLACEHOLDER/
 └── backups/
     └── YYYYMMDD/                          ← date the plan was generated
         ├── plan/
-        │   └── backup_plan_YYYYMMDD_HHMMSS.yml
+        │   └── backup_plan_YYYYMMDD_HHMMSS.yml      ← standard storage
         ├── logs/
-        │   ├── backup_execution_YYYYMMDD_HHMMSS.log   ← first run
-        │   └── backup_execution_YYYYMMDD_HHMMSS.log   ← any resumed runs
+        │   ├── backup_execution_YYYYMMDD_HHMMSS.log  ← standard storage
+        │   └── backup_execution_YYYYMMDD_HHMMSS.log  ← any resumed runs
         ├── course_shared_folders/
-        │   ├── CS099-2023FA_shared/
-        │   │   └── ... (original folder contents)
-        │   └── PHY110-2023FA/
-        │       └── ...
+        │   ├── CS099-2023FA_shared.tar.gz             ← Glacier IR
+        │   └── PHY110-2023FA.tar.gz                   ← Glacier IR
         └── home/
-            ├── jsmith/
-            │   └── ... (original home directory contents)
-            └── bjones/
-                └── ...
+            ├── jsmith.tar.gz                          ← Glacier IR
+            └── bjones.tar.gz                          ← Glacier IR
 ```
 
 ### Browsing via AWS CLI
@@ -239,27 +241,45 @@ aws s3 ls s3://S3_BUCKET_PLACEHOLDER/backups/ --recursive | grep jsmith
 
 ## Downloading Backed-Up Data
 
+Each directory is stored as a single `.tar.gz` archive. Download the archive
+first, then extract it.
+
 To restore a single user's home directory:
 
 ```bash
-aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/jsmith/ \
-    /shared/home/jsmith/ \
-    --recursive
+# Download the archive
+aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/jsmith.tar.gz .
+
+# Extract — this recreates a 'jsmith/' folder in the current directory
+tar -xzf jsmith.tar.gz
+
+# Move it back into place
+mv jsmith /shared/home/jsmith
 ```
 
 To restore a course shared folder:
 
 ```bash
-aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/course_shared_folders/CS099-2023FA_shared/ \
-    /shared/courseSharedFolders/CS099-2023FA_shared/ \
-    --recursive
+aws s3 cp \
+    s3://S3_BUCKET_PLACEHOLDER/backups/20240115/course_shared_folders/CS099-2023FA_shared.tar.gz .
+tar -xzf CS099-2023FA_shared.tar.gz
+mv CS099-2023FA_shared /shared/courseSharedFolders/CS099-2023FA_shared
 ```
 
-To restore everything from a run:
+To download and extract everything from a run at once:
 
 ```bash
-aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/ /restore/20240115/ --recursive
+# Download all archives for the run
+aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/ ./restore/20240115/ --recursive
+
+# Extract all archives in one go
+find ./restore/20240115 -name "*.tar.gz" -exec tar -xzf {} -C ./restore/20240115 \;
 ```
+
+> **Note on Glacier Instant Retrieval:** despite the "Glacier" name, the
+> Instant Retrieval tier returns data immediately with no restore step
+> required — the `aws s3 cp` commands above will work without any
+> additional action.
 
 ## Reviewing Logs and Plan Records
 
