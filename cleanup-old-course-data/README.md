@@ -22,15 +22,17 @@ already been completed.
 
 ## Prerequisites
 
-- Python 3.10 or later
-- The following Python packages (install via `pip install boto3 pyyaml`):
-  - `boto3`
-  - `pyyaml`
-- AWS credentials configured with permission to read and write to
-  `S3_BUCKET_PLACEHOLDER` (typically via an IAM role on the host, or
-  `~/.aws/credentials`)
-- Read access to `/shared/courseSharedFolders` and `/shared/home`
-- Sufficient permission to delete directories under those paths
+- `uv` is preferred as a Python package management solution. This directory
+  includes a `pyproject.toml` file with the required dependencies, also outlined
+  below in case they need to be reproduced.
+    - Python 3.10 or later
+    - The following Python packages (install via `pip install boto3 pyyaml`):
+        - `boto3`
+        - `pyyaml`
+- Sign in to the appropriate AWS account through the [AWS SAML CLI](https://github.huit.harvard.edu/HUIT/aws-login-saml-cli)
+- `sudo` permissions on the HUIT OOD system, which should include:
+    - Read access to `/shared/courseSharedFolders` and `/shared/home`
+    - Sufficient permission to delete directories under those paths
 
 ---
 
@@ -39,7 +41,12 @@ already been completed.
 ### Step 1: Prepare the active courses list
 
 Create a plain text file listing every **currently active** course ID, one per
-line. Any course not in this list will be flagged for backup and removal.
+line. Any course not in this list will be flagged for backup and removal. A good
+source for this information is the [Courses Using Compute Environments - summary
+for reporting up and
+out](https://docs.google.com/spreadsheets/d/1YwDgG4S768SQhtP3t-eBB3MfxCHOBkZqm4V6ToP-2pk/edit?gid=0#gid=0)
+Google Sheet, which should already have the course IDs in a column ready to copy
+out of the spreadsheet.
 
 ```text
 # active_courses.txt
