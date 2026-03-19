@@ -135,18 +135,19 @@ python execute_plan.py backup_plan_20240115_103000.yml S3_BUCKET_PLACEHOLDER
 
 For each item the executor will:
 
-1. Upload the full directory tree to S3
-2. Delete the local copy only after the upload succeeds
-3. Record the outcome (`completed`, `failed`, or `skipped`) in the plan file
-4. Sync the updated plan file and the execution log to S3
+1. Compress the directory into a `.tar.gz` file
+2. Upload the file containing the full directory tree to S3
+3. Delete the local copy only after the upload succeeds
+4. Record the outcome (`completed`, `failed`, or `skipped`) in the plan file
+5. Sync the updated plan file and the execution log to S3
 
 Progress is printed to the terminal and written to a timestamped log file in
 the current directory, for example `backup_execution_20240115_110000.log`.
 
-If an item's upload fails, the local copy is not deleted and the item is
-marked `failed` in the plan. The run continues with the remaining items. See
-[Resuming an Interrupted Run](TODO: figure out GH internal links) for how to retry
-failed items.
+If an item's upload fails, the local copy is not deleted and the item is marked
+`failed` in the plan. The run continues with the remaining items. See the next
+section, [Resuming an Interrupted Run](#resuming-an-interrupted-run), for how to
+retry failed items.
 
 ## Resuming an Interrupted Run
 
@@ -200,11 +201,11 @@ s3://S3_BUCKET_PLACEHOLDER/
         │   ├── backup_execution_YYYYMMDD_HHMMSS.log  ← standard storage
         │   └── backup_execution_YYYYMMDD_HHMMSS.log  ← any resumed runs
         ├── course_shared_folders/
-        │   ├── CS099-2023FA_shared.tar.gz             ← Glacier IR
-        │   └── PHY110-2023FA.tar.gz                   ← Glacier IR
+        │   ├── 000000outer.tar.gz                     ← Glacier IR
+        │   └── 111111outer.tar.gz                     ← Glacier IR
         └── home/
-            ├── jsmith.tar.gz                          ← Glacier IR
-            └── bjones.tar.gz                          ← Glacier IR
+            ├── aaa999.tar.gz                          ← Glacier IR
+            └── bbb777.tar.gz                          ← Glacier IR
 ```
 
 ### Browsing via AWS CLI
@@ -236,7 +237,7 @@ aws s3 ls s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/
 Check whether a specific user or folder was backed up:
 
 ```bash
-aws s3 ls s3://S3_BUCKET_PLACEHOLDER/backups/ --recursive | grep jsmith
+aws s3 ls s3://S3_BUCKET_PLACEHOLDER/backups/ --recursive | grep bbb777
 ```
 
 ### Browsing via AWS Console
