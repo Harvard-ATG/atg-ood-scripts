@@ -128,29 +128,37 @@ touched.
 python execute_plan.py backup_plan_20240115_103000.yml S3_BUCKET_PLACEHOLDER --dry-run
 ```
 
-### Step 5: Execute the plan
-
-When you are satisfied with the plan, run the executor for real:
+### Step 5: Back up the data
 
 ```bash
-python execute_plan.py backup_plan_20240115_103000.yml S3_BUCKET_PLACEHOLDER
+python backup_data.py backup_plan_20240115_103000.yml S3_BUCKET_PLACEHOLDER
 ```
 
-For each item the executor will:
+This compresses and uploads each flagged directory to S3 and marks it
+`backed_up` in the plan file. Local copies are left in place. The updated
+plan is synced to S3 after every item so progress is never lost.
 
-1. Compress the directory into a `.tar.gz` file
-2. Upload the file containing the full directory tree to S3
-3. Delete the local copy only after the upload succeeds
-4. Record the outcome (`completed`, `failed`, or `skipped`) in the plan file
-5. Sync the updated plan file and the execution log to S3
+### Step 6: Review the backups, then delete local copies
 
-Progress is printed to the terminal and written to a timestamped log file in
-the current directory, for example `backup_execution_20240115_110000.log`.
+Open the plan file (or download it from S3) and confirm that every expected
+item has status `backed_up` and a populated `s3_location` field before
+proceeding.
 
-If an item's upload fails, the local copy is not deleted and the item is marked
-`failed` in the plan. The run continues with the remaining items. See the next
-section, [Resuming an Interrupted Run](#resuming-an-interrupted-run), for how to
-retry failed items.
+A utility that can be useful for comparing two `.tar.gz` files to see if the
+contents differ is [pkgdiff](https://lvc.github.io/pkgdiff/). You can set that
+up locally or on a node in the cluster, and use it to see if the contents of the
+file backed up to s3 differ from one created with a `tar -czf` command locally.
+If you do the comparison locally on your machine, you can more easily access the
+HTML report file to take a closer look at any discrepancies.
+
+```bash
+# Always use --from-s3 to ensure you are working from the latest plan state
+python delete_data.py backup_plan_20240115_103000.yml S3_BUCKET_PLACEHOLDER --from-s3
+```
+
+Before deleting each directory, the script verifies the S3 archive exists
+and has a non-zero size. If the verification fails for any item, that item
+is marked `failed` and skipped — no data is lost.
 
 ## Resuming an Interrupted Run
 
