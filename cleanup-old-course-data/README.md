@@ -54,6 +54,9 @@ out](https://docs.google.com/spreadsheets/d/1YwDgG4S768SQhtP3t-eBB3MfxCHOBkZqm4V
 Google Sheet, which should already have the course IDs in a column ready to copy
 out of the spreadsheet.
 
+Be sure to include ongoing test sites so that you don't remove admins' home
+directories.
+
 ```text
 # active_courses.txt
 # Lines beginning with # and blank lines are ignored.
@@ -257,22 +260,22 @@ To restore a single user's home directory:
 
 ```bash
 # Download the archive
-aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/jsmith.tar.gz .
+aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/bbb777.tar.gz .
 
-# Extract — this recreates a 'jsmith/' folder in the current directory
-tar -xzf jsmith.tar.gz
+# Extract — this recreates a 'bbb777/' folder in the current directory
+tar -xzf bbb777.tar.gz
 
 # Move it back into place
-mv jsmith /shared/home/jsmith
+mv bbb777 /shared/home/bbb777
 ```
 
 To restore a course shared folder:
 
 ```bash
 aws s3 cp \
-    s3://S3_BUCKET_PLACEHOLDER/backups/20240115/course_shared_folders/CS099-2023FA_shared.tar.gz .
-tar -xzf CS099-2023FA_shared.tar.gz
-mv CS099-2023FA_shared /shared/courseSharedFolders/CS099-2023FA_shared
+    s3://S3_BUCKET_PLACEHOLDER/backups/20240115/course_shared_folders/000000outer.tar.gz .
+tar -xzf 000000outer.tar.gz
+mv 000000outer /shared/courseSharedFolders/000000outer
 ```
 
 To download and extract everything from a run at once:
