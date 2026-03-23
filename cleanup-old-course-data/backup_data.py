@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Back up directories listed in a plan file to S3 as compressed .tar.gz archives.
+Back up directories listed in a plan file to S3 as compressed .tar archives.
 
 For every item with status 'pending':
-  1. Compress the directory to a temporary .tar.gz archive.
+  1. Gather the directory to a temporary .tar archive.
   2. Upload the archive to S3 using the Glacier Instant Retrieval storage class.
   3. Mark the item 'backed_up' in the plan file.
   4. Sync the updated plan and execution log to S3.
@@ -16,8 +16,8 @@ S3 layout
 ---------
   {s3_prefix}/plan/{plan_filename}                       <- standard storage
   {s3_prefix}/logs/{log_filename}                        <- standard storage
-  {s3_prefix}/course_shared_folders/{name}.tar.gz        <- Glacier IR
-  {s3_prefix}/home/{username}.tar.gz                     <- Glacier IR
+  {s3_prefix}/course_shared_folders/{name}.tar           <- Glacier IR
+  {s3_prefix}/home/{username}.tar                        <- Glacier IR
 
 Usage
 -----
@@ -188,7 +188,7 @@ def compress_and_upload_to_s3(
     logger:     logging.Logger,
 ) -> tuple[int, float]:
     """
-    Compress the directory at local_path to a temporary .tar.gz archive and
+    Compress the directory at local_path to a temporary .tar archive and
     upload it to S3 using Glacier Instant Retrieval.
 
     The archive is written to a temporary directory that is cleaned up after
@@ -203,10 +203,10 @@ def compress_and_upload_to_s3(
     file_count  = sum(1 for p in Path(local_path).rglob("*") if p.is_file())
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        archive_path = os.path.join(tmp_dir, f"{folder_name}.tar.gz")
+        archive_path = os.path.join(tmp_dir, f"{folder_name}.tar")
 
         logger.debug(f"    Compressing {file_count} file(s) from '{local_path}'")
-        with tarfile.open(archive_path, "w:gz") as tar:
+        with tarfile.open(archive_path, "w") as tar:
             tar.add(local_path, arcname=folder_name)
 
         compressed_mb = os.path.getsize(archive_path) / (1024 * 1024)
@@ -298,7 +298,7 @@ def backup_item(
         )
         return
 
-    s3_key = f"{s3_prefix}/{item_type}/{label}.tar.gz"
+    s3_key = f"{s3_prefix}/{item_type}/{label}.tar"
     s3_uri = f"s3://{bucket}/{s3_key}"
 
     if dry_run:
@@ -478,7 +478,7 @@ def run_backup(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Back up pending directories from a plan file to S3 as .tar.gz "
+            "Back up pending directories from a plan file to S3 as .tar "
             "archives using Glacier Instant Retrieval storage. Does not delete "
             "local copies — run delete_data.py after reviewing the backups."
         )

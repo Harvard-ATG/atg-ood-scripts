@@ -238,7 +238,7 @@ def resolve_s3_key(item: dict, bucket: str, logger: logging.Logger) -> "str | No
     if s3_key:
         return s3_key
 
-    # Fallback: parse "s3://bucket/some/key.tar.gz"
+    # Fallback: parse "s3://bucket/some/key.tar"
     s3_location = item.get("s3_location", "")
     prefix      = f"s3://{bucket}/"
     if s3_location.startswith(prefix):

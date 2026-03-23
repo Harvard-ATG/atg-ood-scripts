@@ -11,7 +11,7 @@ The backup process uses two scripts:
 | Script | Purpose |
 |---|---|
 | `generate_plan.py` | Scans course shared folders and user home directories, compares them against a list of active course IDs, and produces a YAML plan file listing what will be backed up and removed |
-| `execute_plan.py` | Reads the plan file, compresses each flagged directory into a `.tar.gz` archive, uploads it to S3 using the Glacier Instant Retrieval storage class, deletes the local copy, and records the outcome back into the plan file |
+| `execute_plan.py` | Reads the plan file, compresses each flagged directory into a `.tar` archive, uploads it to S3 using the Glacier Instant Retrieval storage class, deletes the local copy, and records the outcome back into the plan file |
 
 Backup archives are stored using the **Glacier Instant Retrieval** storage
 class, which significantly reduces storage costs while still allowing data to
@@ -144,10 +144,10 @@ Open the plan file (or download it from S3) and confirm that every expected
 item has status `backed_up` and a populated `s3_location` field before
 proceeding.
 
-A utility that can be useful for comparing two `.tar.gz` files to see if the
+A utility that can be useful for comparing two `.tar` files to see if the
 contents differ is [pkgdiff](https://lvc.github.io/pkgdiff/). You can set that
 up locally or on a node in the cluster, and use it to see if the contents of the
-file backed up to s3 differ from one created with a `tar -czf` command locally.
+file backed up to s3 differ from one created with a `tar -cf` command locally.
 If you do the comparison locally on your machine, you can more easily access the
 HTML report file to take a closer look at any discrepancies.
 
@@ -212,11 +212,11 @@ s3://S3_BUCKET_PLACEHOLDER/
         │   ├── backup_execution_YYYYMMDD_HHMMSS.log  ← standard storage
         │   └── backup_execution_YYYYMMDD_HHMMSS.log  ← any resumed runs
         ├── course_shared_folders/
-        │   ├── 000000outer.tar.gz                     ← Glacier IR
-        │   └── 111111outer.tar.gz                     ← Glacier IR
+        │   ├── 000000outer.tar                        ← Glacier IR
+        │   └── 111111outer.tar                        ← Glacier IR
         └── home/
-            ├── aaa999.tar.gz                          ← Glacier IR
-            └── bbb777.tar.gz                          ← Glacier IR
+            ├── aaa999.tar                             ← Glacier IR
+            └── bbb777.tar                             ← Glacier IR
 ```
 
 ### Browsing via AWS CLI
@@ -261,17 +261,17 @@ aws s3 ls s3://S3_BUCKET_PLACEHOLDER/backups/ --recursive | grep bbb777
 
 ## Downloading Backed-Up Data
 
-Each directory is stored as a single `.tar.gz` archive. Download the archive
+Each directory is stored as a single `.tar` archive. Download the archive
 first, then extract it.
 
 To restore a single user's home directory:
 
 ```bash
 # Download the archive
-aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/bbb777.tar.gz .
+aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/home/bbb777.tar .
 
 # Extract — this recreates a 'bbb777/' folder in the current directory
-tar -xzf bbb777.tar.gz
+tar -xf bbb777.tar
 
 # Move it back into place
 mv bbb777 /shared/home/bbb777
@@ -281,8 +281,8 @@ To restore a course shared folder:
 
 ```bash
 aws s3 cp \
-    s3://S3_BUCKET_PLACEHOLDER/backups/20240115/course_shared_folders/000000outer.tar.gz .
-tar -xzf 000000outer.tar.gz
+    s3://S3_BUCKET_PLACEHOLDER/backups/20240115/course_shared_folders/000000outer.tar .
+tar -xf 000000outer.tar
 mv 000000outer /shared/courseSharedFolders/000000outer
 ```
 
@@ -293,7 +293,7 @@ To download and extract everything from a run at once:
 aws s3 cp s3://S3_BUCKET_PLACEHOLDER/backups/20240115/ ./restore/20240115/ --recursive
 
 # Extract all archives in one go
-find ./restore/20240115 -name "*.tar.gz" -exec tar -xzf {} -C ./restore/20240115 \;
+find ./restore/20240115 -name "*.tar" -exec tar -xf {} -C ./restore/20240115 \;
 ```
 
 > **Note on Glacier Instant Retrieval:** despite the "Glacier" name, the
