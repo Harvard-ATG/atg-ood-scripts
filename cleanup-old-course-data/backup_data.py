@@ -34,8 +34,8 @@ Usage
 
 import os
 import re
+import io
 import tarfile
-import tempfile
 import logging
 import argparse
 import yaml
@@ -177,53 +177,178 @@ def setup_logging(log_file: str) -> logging.Logger:
 
 
 # ---------------------------------------------------------------------------
-# Compression and S3 upload
+# Streaming S3 upload
 # ---------------------------------------------------------------------------
 
-def compress_and_upload_to_s3(
+class S3MultipartWriter:
+    """
+    File-like object that streams data directly to S3 via multipart upload.
+
+    Accepts writes from tarfile's streaming mode and buffers them internally,
+    flushing to S3 as parts whenever the buffer reaches part_size. No data is
+    written to local disk at any point.
+
+    The storage class is set on the multipart upload at creation time so every
+    part and the completed object share the same class without any extra calls.
+
+    Must be used as a context manager. If an exception propagates out of the
+    with block the multipart upload is aborted to prevent orphaned uploads
+    accumulating S3 storage charges.
+    """
+
+    MIN_PART_SIZE = 5 * 1024 * 1024   # 5 MB — S3 hard minimum for all but the final part
+
+    def __init__(
+        self,
+        s3_client,
+        bucket:        str,
+        key:           str,
+        storage_class: str,
+        logger:        logging.Logger,
+        part_size:     int = 100 * 1024 * 1024,  # 100 MB default chunk size
+    ):
+        self.s3_client     = s3_client
+        self.bucket        = bucket
+        self.key           = key
+        self.storage_class = storage_class
+        self.logger        = logger
+        self.part_size     = max(part_size, self.MIN_PART_SIZE)
+
+        self.buffer      = io.BytesIO()
+        self.parts       = []
+        self.part_number = 1
+        self.total_bytes = 0
+
+        response = self.s3_client.create_multipart_upload(
+            Bucket=self.bucket,
+            Key=self.key,
+            StorageClass=self.storage_class,
+        )
+        self.upload_id = response["UploadId"]
+        self.logger.debug(
+            f"    Started multipart upload {self.upload_id} "
+            f"[{self.storage_class}]"
+        )
+
+    def write(self, data: bytes) -> int:
+        self.buffer.write(data)
+        if self.buffer.tell() >= self.part_size:
+            self._flush_part()
+        return len(data)
+
+    def _flush_part(self) -> None:
+        """Upload the current buffer contents as one S3 part and reset the buffer."""
+        self.buffer.seek(0)
+        data = self.buffer.read()
+        if not data:
+            return
+
+        self.logger.debug(
+            f"    Uploading part {self.part_number} "
+            f"({len(data) / (1024 * 1024):.1f} MB)..."
+        )
+        response = self.s3_client.upload_part(
+            Bucket=self.bucket,
+            Key=self.key,
+            PartNumber=self.part_number,
+            UploadId=self.upload_id,
+            Body=data,
+        )
+        self.parts.append({
+            "PartNumber": self.part_number,
+            "ETag":       response["ETag"],
+        })
+        self.total_bytes  += len(data)
+        self.part_number  += 1
+        self.buffer        = io.BytesIO()
+
+    def close(self) -> None:
+        """Flush the final buffer contents and complete the multipart upload."""
+        if self.buffer.tell() > 0:
+            self._flush_part()
+
+        self.s3_client.complete_multipart_upload(
+            Bucket=self.bucket,
+            Key=self.key,
+            UploadId=self.upload_id,
+            MultipartUpload={"Parts": self.parts},
+        )
+        self.logger.debug(
+            f"    Multipart upload complete: s3://{self.bucket}/{self.key} "
+            f"({self.total_bytes / (1024 * 1024):.1f} MB, "
+            f"{len(self.parts)} part(s))"
+        )
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            # An error occurred inside the with block — abort the multipart
+            # upload so the incomplete upload doesn't sit in S3 incurring charges.
+            self.logger.warning(
+                f"    Upload interrupted — aborting multipart upload "
+                f"{self.upload_id}"
+            )
+            try:
+                self.s3_client.abort_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=self.key,
+                    UploadId=self.upload_id,
+                )
+            except Exception as abort_exc:
+                # Log but don't mask the original exception.
+                self.logger.warning(
+                    f"    Could not abort multipart upload {self.upload_id}: "
+                    f"{abort_exc}. Check the S3 console for orphaned uploads "
+                    f"under s3://{self.bucket}/{self.key}."
+                )
+        else:
+            self.close()
+
+        return False  # Never suppress the original exception
+
+
+def stream_directory_to_s3(
     s3_client,
-    local_path: str,
-    bucket:     str,
-    s3_key:     str,
-    logger:     logging.Logger,
+    local_path:    str,
+    bucket:        str,
+    s3_key:        str,
+    storage_class: str,
+    logger:        logging.Logger,
 ) -> tuple[int, float]:
     """
-    Compress the directory at local_path to a temporary .tar archive and
-    upload it to S3 using Glacier Instant Retrieval.
+    Stream a directory to S3 as an uncompressed tar archive via multipart
+    upload. No temporary files are written to local disk.
 
-    The archive is written to a temporary directory that is cleaned up after
-    the upload regardless of success or failure. Compression requires temporary
-    disk space comparable to the size of the source directory.
+    tarfile's streaming write mode ('w|') writes sequentially and never seeks,
+    which is required for a non-seekable file-like object like S3MultipartWriter.
 
-    Returns (file_count, compressed_size_mb).
-    Raises on any compression or S3 error so the caller can mark the item
-    failed without deleting the local directory.
+    PAX_FORMAT is used for maximum portability and correct handling of long
+    paths, large files, and extended metadata.
+
+    Returns (file_count, total_mb).
+    Raises on any tar or S3 error so the caller can mark the item failed
+    without deleting the local directory.
     """
     folder_name = Path(local_path).name
     file_count  = sum(1 for p in Path(local_path).rglob("*") if p.is_file())
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        archive_path = os.path.join(tmp_dir, f"{folder_name}.tar")
+    logger.debug(f"    Streaming {file_count} file(s) from '{local_path}'")
 
-        logger.debug(f"    Compressing {file_count} file(s) from '{local_path}'")
-        with tarfile.open(archive_path, "w") as tar:
+    with S3MultipartWriter(
+        s3_client, bucket, s3_key, storage_class, logger
+    ) as writer:
+        # The inner with block must close before the outer one so that tar's
+        # end-of-archive blocks are written to the writer before close() is
+        # called to complete the multipart upload.
+        with tarfile.open(
+            fileobj=writer, mode="w|", format=tarfile.PAX_FORMAT
+        ) as tar:
             tar.add(local_path, arcname=folder_name)
 
-        compressed_mb = os.path.getsize(archive_path) / (1024 * 1024)
-        logger.debug(f"    Compressed size: {compressed_mb:.1f} MB")
-        logger.debug(
-            f"    Uploading '{archive_path}'  ->  s3://{bucket}/{s3_key} "
-            f"[{BACKUP_STORAGE_CLASS}]"
-        )
-
-        s3_client.upload_file(
-            archive_path,
-            bucket,
-            s3_key,
-            ExtraArgs={"StorageClass": BACKUP_STORAGE_CLASS},
-        )
-
-    return file_count, compressed_mb
+    total_mb = writer.total_bytes / (1024 * 1024)
+    return file_count, total_mb
 
 
 # ---------------------------------------------------------------------------
@@ -319,12 +444,12 @@ def backup_item(
     logger.info(f"    storage : {BACKUP_STORAGE_CLASS}")
 
     try:
-        file_count, compressed_mb = compress_and_upload_to_s3(
-            s3_client, path, bucket, s3_key, logger
+        file_count, total_mb = stream_directory_to_s3(
+            s3_client, path, bucket, s3_key, BACKUP_STORAGE_CLASS, logger
         )
         logger.info(
-            f"    uploaded {file_count} file(s) "
-            f"as {compressed_mb:.1f} MB archive"
+            f"    streamed {file_count} file(s), "
+            f"{total_mb:.1f} MB uncompressed tar archive"
         )
     except (BotoCoreError, ClientError, OSError, tarfile.TarError) as exc:
         logger.error(f"    Backup FAILED for '{label}': {exc}")

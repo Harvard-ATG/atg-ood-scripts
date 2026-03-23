@@ -40,6 +40,10 @@ already been completed.
     - Read access to `/shared/courseSharedFolders` and `/shared/home`
     - Sufficient permission to delete directories under those paths
 
+> **Note:** backup_data.py streams archives directly to S3 without writing
+> any temporary files to local disk, so available disk space on the host
+> is not a factor for the backup step.
+
 ---
 
 ## Running a Backup
@@ -261,8 +265,7 @@ aws s3 ls s3://S3_BUCKET_PLACEHOLDER/backups/ --recursive | grep bbb777
 
 ## Downloading Backed-Up Data
 
-Each directory is stored as a single `.tar` archive. Download the archive
-first, then extract it.
+Each directory is stored as an uncompressed `.tar` archive.
 
 To restore a single user's home directory:
 
